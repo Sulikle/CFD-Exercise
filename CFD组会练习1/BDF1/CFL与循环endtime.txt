@@ -1,0 +1,7 @@
+Unit=64,endx=1,tol=10^(-10)
+
+CFL=0.001,endtime=0.8300
+CFL=0.01 ,endtime=0.9761
+CFL=0.1  ,endtime=1.2024
+CFL=1    ,endtime=2.3102
+CFL=10   ,endtime=12.5583
