@@ -5,24 +5,22 @@ close all
 %Input data
 addpath(genpath('/Users/mac/Documents/CFD-Exercise-main/CFDProject1/Proj1_Mesh'))
 % store the nodal points corresponding to each element in Edata————INPOEL
-feflo_bump = fopen('Proj1_Mesh/feflo.domn.cylinder.coarse', 'rb');%open the file
+feflo_bump = fopen('Proj1_Mesh/feflo.domn.bump', 'rb');%open the file
 skiprows=fscanf(feflo_bump, '%lf',1);% skip some rows
 for i = 1:skiprows+2
     line=fgetl(feflo_bump);
 end
 Ndata = fscanf(feflo_bump, '%lf',[2,1]);
-%read dimention&Nnode
 Ndim=Ndata(1,1);Nnode=Ndata(2,1);
 for i = 1:2
     line=fgetl(feflo_bump);
 end
 Ndata = fscanf(feflo_bump, '%lf',[3,1]);
 Nelement=Ndata(1,1);Npoint=Ndata(2,1);Nface=Ndata(3,1);%Information of elements&points&boundary
-
 for i = 1:3
     line=fgetl(feflo_bump);
 end
-%read data per row
+
 C = textscan(line, '%f');
 numbers = length(str2num(line));
 INPOEL = fscanf(feflo_bump, '%lf',[numbers,Nelement]);
@@ -40,19 +38,11 @@ COORD=COORD(2:3,:);%每一列存储的是这个点的横纵坐标
 for i = 1:2+Npoint+2
     line=fgetl(feflo_bump);
 end
-%由于部分数据缺失，因此BOCND采取这种读取方式
-BCOND=zeros(3,Nface);
-for i=1:Nface
-    C = textscan(line, '%f');
-    BCOND(:,i)=C{1,1}(2:4,1);
-    line=fgetl(feflo_bump);
-end
-
-% C = textscan(line, '%f');
-% numbers = length(str2num(line));
-% BCOND=fscanf(feflo_bump, '%lf',[numbers,Nface]);
-% BCOND=[C{1,1},BCOND];
-% BCOND=BCOND(2:4,:);%每一列存储的是该边界处的左右点以及flag，2代表固定面，4代表无穷远处
+C = textscan(line, '%f');
+numbers = length(str2num(line));
+BCOND=fscanf(feflo_bump, '%lf',[numbers,Nface]);
+BCOND=[C{1,1},BCOND];
+BCOND=BCOND(2:4,:);%每一列存储的是该边界处的左右点以及flag，2代表固定面，4代表无穷远处
 fclose(feflo_bump);
 
 %elements surrounding points
@@ -83,7 +73,9 @@ ESUP2(1)=0;
 
 %stiffness matrix(LHS)&load vector(RHS)
 LHS=zeros(Npoint,Npoint);RHS=zeros(Npoint,1);
-HP=zeros(Nnode,Nnode,Nelement);%help matrix
+HP=zeros(Nnode,Nnode,Nelement);%help matri
+
+x
 Bv=[1,0];%boundary speed
 v_element=zeros(Ndim,Nelement);%v in element
 v_point=zeros(Ndim,Npoint);%v in point
@@ -277,7 +269,45 @@ fprintf(DATA,'%d\t%d\t%d\n',INPOEL');
 % 关闭文件
 fclose(DATA);
 
-
+%The second method constructing load vector(有瑕疵)
+%construct load vector
+% for iface=1:Nface
+%     ip1=BCOND(1,iface);ip2=BCOND(2,iface);flag=BCOND(3,iface);%信息提取
+%     gama_e=sqrt((COORD(1,ip1)-COORD(1,ip2))^2+(COORD(2,ip1)-COORD(2,ip2))^2);%length of face
+%     if flag==4&&(abs(COORD(1,ip1))<1e-5&&abs(COORD(1,ip2))<1e-5)%left face
+%         g=-1;
+%     elseif flag==4&&(abs(COORD(1,ip1)-3)<1e-5&&abs(COORD(1,ip2)-3)<1e-5)%right face
+%         g=1;
+%     end
+%     if flag==2&&(abs(COORD(2,ip1)-1)<1e-5&&abs(COORD(2,ip2)-1)<1e-5)%upper face
+%         g=0;
+%     elseif flag==2&&(abs(COORD(2,ip1))<1e-5&&abs(COORD(2,ip2))<1e-5)%lowwer face
+%         g=0;
+%     elseif flag==2&&(abs(COORD(2,ip1))>1e-5&&abs(COORD(2,ip2))>1e-5)&&(abs(COORD(2,ip1)-1)>1e-5&&abs(COORD(2,ip2)-1)>1e-5)%圆弧处
+%         if COORD(1,ip2)>COORD(1,ip1)%判断点的前后
+%             V_a=COORD(1,ip2)-COORD(1,ip1);V_b=COORD(2,ip2)-COORD(2,ip1);
+%             if V_b>0
+%                 V_x=sqrt(V_b^2/(V_a^2+V_b^2));V_y=-V_a/V_b*V_x;
+%             elseif V_b<0
+%                 V_x=-sqrt(V_b^2/(V_a^2+V_b^2));V_y=-V_a/V_b*V_x;
+%             elseif V_b==0
+%                 V_x=0;
+%             end
+%         elseif COORD(1,ip2)<COORD(1,ip1)
+%             V_a=COORD(1,ip1)-COORD(1,ip2);V_b=COORD(2,ip1)-COORD(2,ip2);
+%             if V_b>0
+%                 V_x=sqrt(V_b^2/(V_a^2+V_b^2));V_y=-V_a/V_b*V_x;
+%             elseif V_b<0
+%                 V_x=-sqrt(V_b^2/(V_a^2+V_b^2));V_y=-V_a/V_b*V_x;
+%             elseif V_b==0
+%                 V_x=0;
+%             end
+%         end
+%         g=V_x;
+%     end
+%     RHS(ip1)=RHS(ip1)+0.5*g*gama_e;
+%     RHS(ip2)=RHS(ip2)+0.5*g*gama_e;
+% end
 
 
 

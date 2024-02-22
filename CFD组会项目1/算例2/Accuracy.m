@@ -1,11 +1,17 @@
-clc
-clear
-close all
+function [l2errors,Nelement]=Accuracy(number)
 %% Preproceeding
 %Input data
 addpath(genpath('/Users/mac/Documents/CFD-Exercise-main/CFDProject1/Proj1_Mesh'))
 % store the nodal points corresponding to each element in Edata————INPOEL
+if number==1
 feflo_bump = fopen('Proj1_Mesh/feflo.domn.cylinder.coarse', 'rb');%open the file
+elseif number==2
+    feflo_bump = fopen('Proj1_Mesh/feflo.domn.cylinder.medium', 'rb');%open the file
+elseif number==3
+    feflo_bump = fopen('Proj1_Mesh/feflo.domn.cylinder.fine', 'rb');%open the file
+elseif number==4
+    feflo_bump = fopen('Proj1_Mesh/feflo.domn.cylinder.vfine', 'rb');%open the file
+end
 skiprows=fscanf(feflo_bump, '%lf',1);% skip some rows
 for i = 1:skiprows+2
     line=fgetl(feflo_bump);
@@ -85,10 +91,12 @@ ESUP2(1)=0;
 LHS=zeros(Npoint,Npoint);RHS=zeros(Npoint,1);
 HP=zeros(Nnode,Nnode,Nelement);%help matrix
 Bv=[1,0];%boundary speed
-v_element=zeros(Ndim,Nelement);%v in element
-v_point=zeros(Ndim,Npoint);%v in point
-v_point_scalar=zeros(1,Npoint);%store the size of v
-v_point_scalar_face=zeros(1,Npoint);%store the size of v in boundary
+varphi_exact=zeros(Npoint,1);
+
+% v_element=zeros(Ndim,Nelement);%v in element
+% v_point=zeros(Ndim,Npoint);%v in point
+% v_point_scalar=zeros(1,Npoint);%store the size of v
+% v_point_scalar_face=zeros(1,Npoint);%store the size of v in boundary
 
 
 
@@ -177,109 +185,82 @@ for iface=1:Nface
     RHS(ip1)=RHS(ip1)+0.5*g*gama_e;
     RHS(ip2)=RHS(ip2)+0.5*g*gama_e;
 end
-% %solve the equation 
-% %SGS速度比较慢，故不采用
-% endtimes=10000;tol=10^(-9);epsilon=10^(-12);
-% A=LHS;b=RHS;b1=b;varphi=zeros(Npoint,1);varphi_start=varphi;%initial value
-% resnorm_start=norm(A*varphi_start-b)+epsilon;
-% for times=2:endtimes
-%     %calculate X Forward sweep
-%     for i=1:Npoint
-%         for j=1:i-1
-%             b(i)=b(i)-A(i,j)*varphi(j);
-%         end
-%         for j=i+1:Npoint
-%             b(i)=b(i)-A(i,j)*varphi(j);
-%         end
-%         varphi(i)=b(i)/A(i,i);
-%     end
-%      b=b1;
-%      %Backward sweep
-%     for i=Npoint:-1:1
-%         for j=Npoint:-1:i+1
-%             b(i)=b(i)-A(i,j)*varphi(j);
-%         end
-%         for j=i-1:-1:1
-%             b(i)=b(i)-A(i,j)*varphi(j);
-%         end
-%         varphi(i)=b(i)/A(i,i);
-%     end
-%     b=b1;
-%     resnorm=norm(A*varphi-b);
-%     ratio=resnorm/resnorm_start;
-%     if ratio<tol
-%         break;
-%     end
-% end
+%固定边界面
+a=0.5;V_x=Bv(1,1);C_big=1e10;
+for iface=1:Nface
+    ip1=BCOND(1,iface);ip2=BCOND(2,iface);
+    varphi_exact_1=V_x*COORD(1,ip1)*(1+a^2/(COORD(1,ip1)^2+COORD(2,ip1)^2));
+    varphi_exact_2=V_x*COORD(1,ip2)*(1+a^2/(COORD(1,ip2)^2+COORD(2,ip2)^2));
+    LHS(ip1,ip1)=C_big*LHS(ip1,ip1);LHS(ip2,ip2)=C_big*LHS(ip2,ip2);
+    RHS(ip1,1)=LHS(ip1,ip1)*varphi_exact_1;RHS(ip2,1)=LHS(ip2,ip2)*varphi_exact_2;
+end
 
-[l,u]=lu(LHS);
-y=l\RHS;
-varphi=u\y;
-
-%solve v in element
-for ie=1:Nelement
-    ipoin1=INPOEL(1,ie);ipoin2=INPOEL(2,ie);ipoin3=INPOEL(3,ie);
-    HPcycle=[ipoin1,ipoin2,ipoin3,ipoin1,ipoin2];c_ie=zeros(1,3);b_i=0;a_i=0;
+% [l,u]=lu(LHS);
+% y=l\RHS;
+% varphi=u\y;
+%solve the equation 
+endtimes=10000;tol=10^(-16);
+A=LHS;b=RHS;b1=b;varphi=zeros(Npoint,1);%initial value
+varphi_start=0;
+for times=2:endtimes
+    %calculate X Forward sweep
+    for i=1:Npoint
+        for j=1:i-1
+            b(i)=b(i)-A(i,j)*varphi(j);
+        end
+        for j=i+1:Npoint
+            b(i)=b(i)-A(i,j)*varphi(j);
+        end
+        varphi(i)=b(i)/A(i,i);
+    end
+     b=b1;
+     %Backward sweep
+    for i=Npoint:-1:1
+        for j=Npoint:-1:i+1
+            b(i)=b(i)-A(i,j)*varphi(j);
+        end
+        for j=i-1:-1:1
+            b(i)=b(i)-A(i,j)*varphi(j);
+        end
+        varphi(i)=b(i)/A(i,i);
+    end
+    b=b1;
+    ratio=max(abs(varphi-varphi_start));
+    varphi_start=varphi;
+    if ratio<tol
+        break;
+    end
+end
+t=[-sqrt(15)/5,0,sqrt(15)/5];
+W=[5/9,8/9,5/9];
+l2errors=0;
+ for ie=1:Nelement
+     ipoin1=INPOEL(1,ie);ipoin2=INPOEL(2,ie);ipoin3=INPOEL(3,ie);c_ie=zeros(1,Nnode);a_ie=zeros(1,Nnode);b_ie=zeros(1,Nnode);
+     x_point=[COORD(1,ipoin1),COORD(1,ipoin2),COORD(1,ipoin3)];y_point=[COORD(2,ipoin1),COORD(2,ipoin2),COORD(2,ipoin3)];
+    HPcycle=[ipoin1,ipoin2,ipoin3,ipoin1,ipoin2];
     for k=1:Nnode%先计算c
            c_ie(k)=COORD(1,HPcycle(k+1))*COORD(2,HPcycle(k+2))-COORD(1,HPcycle(k+2))*COORD(2,HPcycle(k+1));
+           a_ie(k)=COORD(2,HPcycle(k+1))-COORD(2,HPcycle(k+2));b_ie(k)=-(COORD(1,HPcycle(k+1))-COORD(1,HPcycle(k+2)));
     end
-    for i=1:Nnode
-        a_i=COORD(2,HPcycle(i+1))-COORD(2,HPcycle(i+2));
-        b_i=-(COORD(1,HPcycle(i+1))-COORD(1,HPcycle(i+2)));
-        v_element(1,ie)=v_element(1,ie)+varphi(INPOEL(i,ie))*a_i/sum(c_ie);
-        v_element(2,ie)=v_element(2,ie)+varphi(INPOEL(i,ie))*b_i/sum(c_ie);
+
+    D=sum(c_ie);
+    Jacobi=(x_point(1,2)-x_point(1,1))*(y_point(1,3)-y_point(1,1))-(x_point(1,3)-x_point(1,1))*(y_point(1,2)-y_point(1,1));
+    for i=1:3
+        for j=1:3
+            x=x_point(1)*(1-(1-t(i))*(1+t(j))/4-(1+t(i))/2)+x_point(2)*(1-t(i))*(1+t(j))/4+x_point(3)*(1+t(i))/2;
+            y=y_point(1)*(1-(1-t(i))*(1+t(j))/4-(1+t(i))/2)+y_point(2)*(1-t(i))*(1+t(j))/4+y_point(3)*(1+t(i))/2;
+            f_ij=(1-t(i))/8*(V_x*x*(1+a^2/(x^2+y^2))-1/D*(varphi(ipoin1,1)*(a_ie(1)*x+b_ie(1)*y+c_ie(1))+varphi(ipoin2,1)*(a_ie(2)*x+b_ie(2)*y+c_ie(2))+varphi(ipoin3,1)*(a_ie(3)*x+b_ie(3)*y+c_ie(3))))^2;
+            l2errors=l2errors+W(j)*W(i)*f_ij*Jacobi;
+        end
     end
+ end
+ l2errors=sqrt(l2errors);
+
+
+
+
+
+
+
+
 end
-
-%solve v in point
-for IPOIN=1:Npoint %loop over the points
-    sum_weight_x=0;sum_weight_y=0;
-    NESP=ESUP2(1,IPOIN+1)-ESUP2(1,IPOIN);%number of elements surrounding IPOIN
-    WEIGHT=zeros(1,NESP);
-    for ie=ESUP2(IPOIN)+1:ESUP2(IPOIN+1)%loop over the elements surrounding IPOIN
-    ipoin1=INPOEL(1,ESUP1(ie));ipoin2=INPOEL(2,ESUP1(ie));ipoin3=INPOEL(3,ESUP1(ie));
-    HPcycle=[ipoin1,ipoin2,ipoin3,ipoin1,ipoin2];
-    for k=1:Nnode%计算第ie-ESUP2(IPOIN)单元的D
-           WEIGHT(ie-ESUP2(IPOIN))=WEIGHT(ie-ESUP2(IPOIN))+COORD(1,HPcycle(k+1))*COORD(2,HPcycle(k+2))-COORD(1,HPcycle(k+2))*COORD(2,HPcycle(k+1));
-    end
-    end
-    for ie=ESUP2(IPOIN)+1:ESUP2(IPOIN+1)
-        sum_weight_x=sum_weight_x+v_element(1,ESUP1(ie))*WEIGHT(ie-ESUP2(IPOIN));
-        sum_weight_y=sum_weight_y+v_element(2,ESUP1(ie))*WEIGHT(ie-ESUP2(IPOIN));        
-    end
-    v_point(1,IPOIN)=sum_weight_x/sum(WEIGHT);v_point(2,IPOIN)=sum_weight_y/sum(WEIGHT);
-end
-%calculate the size of v in points
-for IPOIN=1:Npoint
-    v_point_scalar(1,IPOIN)=sqrt(v_point(1,IPOIN)^2+v_point(2,IPOIN)^2);
-end
-
-%calculate the size of v in boundarys
-for IFACE=1:Nface  
-    ipoin1=BCOND(1,IFACE);ipoin2=BCOND(2,IFACE);flag=BCOND(3,IFACE);
-    if flag==2
-    v_point_scalar_face(1,ipoin1)=sqrt(v_point(1,ipoin1)^2+v_point(2,ipoin1)^2);
-    v_point_scalar_face(1,ipoin2)=sqrt(v_point(1,ipoin2)^2+v_point(2,ipoin2)^2);
-    end
-end
-
-%% Postproceeding
-%导出网格
-% 打开文件以进行写入
-INPOEL=INPOEL';
-DATA_mix=[COORD',v_point',varphi,v_point_scalar',v_point_scalar_face'];
-DATA = fopen('data.dat', 'w');
-% 使用 fprintf 将数据写入文件
-fprintf(DATA,'Variables=x,y,u,v,Potential,Velocity,Velocity_B\n');
-fprintf(DATA,'Zone n=');fprintf(DATA,num2str(Npoint));fprintf(DATA,',e=');fprintf(DATA,num2str(Nelement));fprintf(DATA,',f=fepoint,et=triangle\n');
-fprintf(DATA,'%f\t%f\t%f\t%f\t%f\t%f\t%f\n',DATA_mix');
-fprintf(DATA,'%d\t%d\t%d\n',INPOEL');
-% 关闭文件
-fclose(DATA);
-
-
-
-
-
-
-
